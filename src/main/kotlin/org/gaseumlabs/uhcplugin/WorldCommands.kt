@@ -4,10 +4,12 @@ import co.aikar.commands.BaseCommand
 import co.aikar.commands.annotation.CommandAlias
 import co.aikar.commands.annotation.Description
 import net.kyori.adventure.text.Component
+import net.kyori.adventure.text.TextComponent
 import net.kyori.adventure.text.format.NamedTextColor
 import org.bukkit.World
 import org.bukkit.command.CommandSender
 import org.bukkit.entity.Player
+import kotlin.random.Random
 
 class WorldCommands : BaseCommand() {
 	@CommandAlias("refreshworld")
@@ -34,18 +36,24 @@ class WorldCommands : BaseCommand() {
 
 	@CommandAlias("findseed")
 	fun findSeedCommand(sender: CommandSender) {
-		val testWorld = WorldManager.refresh(Lobby.WORLD_INFO)
+		val seed = Random.nextLong()
 
-		val analysis = WorldAnalyzer.analyzeBiomes(testWorld, 50, 500)
+		sender.sendMessage("Generating seed ${seed}...")
 
-		val seed = testWorld.seed
-		val warnings = analysis.validate()
+		val world = WorldManager.refresh(Game.WORLD_GAME_NETHER, seed)
 
-		sender.sendMessage(if (warnings == null)
+		WorldAnalyzer.analyzeNether(world, 500).thenAccept { analysis ->
+			val warnings = analysis.validate()
+
+			sender.sendMessage(if (warnings == null)
 				Component.text("Seed $seed is valid", NamedTextColor.GREEN)
 			else
 				Component.text("Seed $seed is invalid: $warnings", NamedTextColor.RED)
-		)
+			)
+		}.exceptionally {
+			sender.sendMessage("Something went wrong...")
+			null
+		}
 	}
 
 	@CommandAlias("gotoseed")
