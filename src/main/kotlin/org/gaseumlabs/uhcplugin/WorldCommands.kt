@@ -43,13 +43,16 @@ class WorldCommands : BaseCommand() {
 		val world = WorldManager.refresh(Game.WORLD_GAME_NETHER, seed)
 
 		WorldAnalyzer.analyzeNether(world, 500).thenAccept { analysis ->
-			val warnings = analysis.validate()
+			analysis.generateReport().forEach { sender.sendMessage(it) }
 
-			sender.sendMessage(if (warnings == null)
-				Component.text("Seed $seed is valid", NamedTextColor.GREEN)
-			else
-				Component.text("Seed $seed is invalid: $warnings", NamedTextColor.RED)
+			val warnings = analysis.validate()
+			sender.sendMessage(
+				if (warnings == null)
+					Component.text("Seed $seed is valid", NamedTextColor.GREEN)
+				else
+					Component.text("Seed $seed is invalid: $warnings", NamedTextColor.RED)
 			)
+
 		}.exceptionally {
 			sender.sendMessage("Something went wrong...")
 			null

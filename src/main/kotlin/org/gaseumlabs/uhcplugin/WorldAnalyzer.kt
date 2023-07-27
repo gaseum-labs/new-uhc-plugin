@@ -8,6 +8,7 @@ import org.bukkit.World
 import org.bukkit.block.Biome
 import org.bukkit.generator.structure.Structure
 import java.util.concurrent.CompletableFuture
+import kotlin.math.floor
 
 object WorldAnalyzer {
 	data class Count(var count: Int)
@@ -46,11 +47,12 @@ object WorldAnalyzer {
 	}
 
 	data class NetherAnalysis(
-		val fortressLocation: Location?,
+		val fortressDistance: Int?,
+		val outerRadius: Int,
 		val platformRatio: Float
 	) : Analysis() {
 		override fun validate(): String? {
-			if (fortressLocation == null) return "Does not have fortress within bounds"
+			if (fortressDistance == null || fortressDistance > outerRadius / 2) return "Fortress is farther away than ${outerRadius / 2} blocks from center"
 
 			if (platformRatio < 0.9) return  "${"%.2f".format((1.0f - platformRatio) * 100.0f)}% of the map is a lava ocean, more than 10%"
 			return null
@@ -58,7 +60,7 @@ object WorldAnalyzer {
 
 		override fun generateReport(): List<Component> {
 			return listOf(
-				Component.text("Fortress location: ", NamedTextColor.GOLD).append(Component.text(fortressLocation.toString(), NamedTextColor.WHITE)),
+				Component.text("Fortress distance: ", NamedTextColor.GOLD).append(Component.text(fortressDistance.toString(), NamedTextColor.WHITE)),
 				Component.text("Percentage Walkable: ", NamedTextColor.GOLD).append(Component.text("${"%.2f".format(platformRatio * 100.0f)}%", NamedTextColor.WHITE))
 			)
 		}
@@ -93,23 +95,27 @@ object WorldAnalyzer {
 	}
 
 	fun analyzeNether(world: World, outerRadius: Int): CompletableFuture<NetherAnalysis> {
-		val fortressLocation = world.locateNearestStructure(Location(world, 0.0, 60.0, 0.0), Structure.FORTRESS, outerRadius / 2, false)?.location
+		val center = Location(world, 0.0, 0.0, 0.0)
+		val fortressLocation = world.locateNearestStructure(center, Structure.FORTRESS, outerRadius / 2, false)?.location
 
 		var goodSamples = 0
 
 		val chunkFutures = ArrayList<CompletableFuture<Chunk>>()
 
-		fun hasPlatform(chunk: Chunk): Boolean {
+		fun isLavaOcean(chunk: Chunk): Boolean {
 			var lastBlock = chunk.getBlock(7, 100, 7)
+			var insideWall = !lastBlock.isPassable
 
 			for (y in 99 downTo  31) {
 				val currentBlock = chunk.getBlock(7, y, 7)
-				if (lastBlock.isPassable && !currentBlock.isPassable) return true
+				if (lastBlock.isPassable && !currentBlock.isPassable) return false
+				if (lastBlock.isPassable) insideWall = false
 
 				lastBlock = currentBlock
 			}
 
-			return false
+			/* if we stay in a wall the entire time it's not a lava ocean */
+			return !insideWall
 		}
 
 		val outerRange = -outerRadius..outerRadius step 16
@@ -121,10 +127,10 @@ object WorldAnalyzer {
 
 		return CompletableFuture.allOf(*chunkFutures.toTypedArray()).thenApply {
 			chunkFutures.forEach { chunkFuture ->
-				if (hasPlatform(chunkFuture.get())) ++goodSamples
+				if (!isLavaOcean(chunkFuture.get())) ++goodSamples
 			}
 
-			return@thenApply NetherAnalysis(fortressLocation, goodSamples.toFloat() / chunkFutures.size.toFloat())
+			return@thenApply NetherAnalysis(fortressLocation?.distance(center)?.toInt(), outerRadius, goodSamples.toFloat() / chunkFutures.size.toFloat())
 		}
 	}
 }
